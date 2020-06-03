@@ -29,5 +29,9 @@ Mini版本的springmvc实现思路：
         2.调用方法参数写死
 
     v2版本(yys-springmvc-v2 - com.yys.mvcframework.v2.servlet.YysDispatcherServlet)：
-        1.逻辑复杂，难以维护
-        2.调用方法参数写死
+        1.在v1版本之上，采用 模板模式/委派模式/单例模式 优化了代码
+        2.存在问题，在调用方法参数写死
+        3.handlerMapping不能像springmvc框架一样，支持正则，url参数还不支持强制类型转换
+            在反射调用前还需重新获取beanName
+
+
