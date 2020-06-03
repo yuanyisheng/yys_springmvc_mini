@@ -1,0 +1,33 @@
+
+Mini版本的springmvc实现思路：
+
+1.配置阶段
+    配置web.xml
+    设置init-param: contextConfigLocation = classpath:application.xml
+    设置url-pattern: /*
+    配置Annotation: @YysController @YysService @YysRequestMapping @YysAutowired @YysRequestParam
+
+2.初始化阶段
+    调用init()方法: 加载配置文件
+    IOC容器初始化
+    扫描相关的类
+    (IOC) 创建实例化并保存到容器
+    (DI) 进行DI操作
+    (MVC) 初始化HandlerMapping
+
+3.运行阶段
+    调用doPost()/doGet()方法: web容器调用doPost/doGet方法，获得request/response对象
+    匹配HandlerMapping: 从request对象中获得用户输入的url，找到其对应的Method
+    反射调用method.invoke(): 利用反射调用方法并返回结果
+    response.getWrite().write(): 将结果输出到浏览器
+
+
+实现三版本：
+
+    v1版本(yys-springmvc-v1 - com.yys.mvcframework.v1.servlet.YysDispatcherServlet)：
+        1.逻辑复杂，难以维护
+        2.调用方法参数写死
+
+    v2版本(yys-springmvc-v2 - com.yys.mvcframework.v2.servlet.YysDispatcherServlet)：
+        1.逻辑复杂，难以维护
+        2.调用方法参数写死
