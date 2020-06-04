@@ -1,5 +1,5 @@
 
-Mini版本的springmvc实现思路：
+一、Mini版本的springmvc实现思路：
 
 1.配置阶段
     配置web.xml
@@ -22,7 +22,7 @@ Mini版本的springmvc实现思路：
     response.getWrite().write(): 将结果输出到浏览器
 
 
-实现三版本：
+二、实现三版本：
 
     v1版本(yys-springmvc-v1 - com.yys.mvcframework.v1.servlet.YysDispatcherServlet)：
         1.逻辑复杂，难以维护
@@ -33,6 +33,13 @@ Mini版本的springmvc实现思路：
         2.存在问题，在调用方法参数写死
         3.handlerMapping不能像springmvc框架一样，支持正则，url参数还不支持强制类型转换
             在反射调用前还需重新获取beanName
+        4.调用方法参数写死
 
     v3版本(yys-springmvc-v3 - com.yys.mvcframework.v3.servlet.YysDispatcherServlet)：
-        1.
+        1.改造handlerMapping(在spring，handlerMapping是一个List而非Map，List元素是一个自定义的类型)
+            在这里我们仿真一个内部类，Handler类
+
+
+三、启动步骤
+
+    直接配tomcat启动即可

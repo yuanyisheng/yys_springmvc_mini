@@ -15,6 +15,8 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * spring mvc 核心
@@ -33,8 +35,9 @@ public class YysDispatcherServlet extends HttpServlet {
     // IOC容器(Spring中为 ConcurrentHashMap)
     private Map<String, Object> ioc = new HashMap<String, Object>();
 
-    // 存储Controller中，所有Mapping(url-method)对应关系
-    private Map<String, Method> handlerMapping = new HashMap<String, Method>();
+    // (v3版本改进.)保存所有的url和方法的映射关系
+//    private Map<String, Method> handlerMapping = new HashMap<String, Method>();
+    private List<Handler> handlerMapping = new ArrayList<Handler>();
 
 
     @Override
@@ -99,58 +102,53 @@ public class YysDispatcherServlet extends HttpServlet {
      */
     private void doDispatch(HttpServletRequest req, HttpServletResponse resp) throws Exception {
 
-        String url = req.getRequestURI();
-        String contextPath = req.getContextPath();
-        url = url.replaceAll(contextPath, "").replaceAll("/+", "/");
+        // TODO ---------------改进版本---------------------------
 
-        if(!this.handlerMapping.containsKey(url)) {
+        Handler handler = getHandler(req);
+        if(handler == null) {
             resp.getWriter().write("404 Not Found !");
             return;
         }
 
-        Method method = this.handlerMapping.get(url);
-        Map<String, String[]> params = req.getParameterMap();
         // 获取方法的形参列表
-        Class<?>[] parameterTypes = method.getParameterTypes();
-        // 保存请求的url参数列表
-        Map<String,String[]> parameterMap = req.getParameterMap();
-        // 保存赋值参数的位置
-        Object [] paramValues = new Object[parameterTypes.length];
+        Class<?>[] paramTypes = handler.method.getParameterTypes();
 
-        // 根据参数位置动态赋值
-        for (int i = 0; i < parameterTypes.length; i++) {
-            Class<?> parameterType = parameterTypes[i];
+        // 保存所有需要自动赋值参数
+        Object [] paramValues = new Object[paramTypes.length];
 
-            if(parameterType == HttpServletRequest.class) {
-                paramValues[i] = req;
-                continue;
-            } else if(parameterType == HttpServletResponse.class) {
-                paramValues[i] = resp;
-                continue;
-            } else if(parameterType == String.class) {
-                // 获取方法中带注解的参数-二维数组
-                Annotation[][] pa = method.getParameterAnnotations();
-                for (int j = 0; j < pa.length; j++) {
-                    for (Annotation a : pa[j]) {
-                        String paramName = ((YysRequestParam) a).value();
-                        if(!"".equals(paramName.trim())) {
-                            String value = Arrays.toString(parameterMap.get(paramName))
-                                    .replaceAll("\\[|\\]", "")
-                                    .replaceAll("\\s", ",");
-                            paramValues[i] = value;
-                        }
-                    }
-                }
-            }
+        // 设置方法中的参数
+        Map<String, String[]> params = req.getParameterMap();
+        for (Map.Entry<String, String[]> param : params.entrySet()) {
+            if(!handler.paramIndexMapping.containsKey(param.getKey())) continue;
+
+            String value = Arrays.toString(param.getValue())
+                    .replaceAll("\\[|\\]", "")
+                    .replaceAll("\\s", ",");
+            Integer index = handler.paramIndexMapping.get(param.getKey());
+            paramValues[index] = convert(paramTypes[index], value);
         }
 
-        // 投机取巧的方式
-        // 通过反射拿到 method 所在 class，拿到 class 之后还是拿到 class 的名称
-        // 再调用 toLowerFirstCase 获得 beanName
-        String beanName = toLowerFirstCase(method.getDeclaringClass().getSimpleName());
-        method.invoke(ioc.get(beanName), new Object[]{req, resp, params.get("name")[0]});
+        // 设置方法中的request对象
+        String reqName = HttpServletRequest.class.getName();
+        if(handler.paramIndexMapping.containsKey(reqName)) {
+            Integer reqIndex = handler.paramIndexMapping.get(reqName);
+            paramValues[reqIndex] = req;
+        }
+
+        // 设置方法中的response对象
+        String respName = HttpServletResponse.class.getName();
+        if(handler.paramIndexMapping.containsKey(respName)) {
+            Integer respIndex = handler.paramIndexMapping.get(respName);
+            paramValues[respIndex] = resp;
+        }
+
+        // 反射调用方法
+        handler.method.invoke(handler.controller, paramValues);
+
+        // TODO ---------------改进版本---------------------------
 
     }
+
 
     /*
      * 初始化 HandlerMapping
@@ -178,7 +176,9 @@ public class YysDispatcherServlet extends HttpServlet {
                 YysRequestMapping methodRequestMapping = method.getAnnotation(YysRequestMapping.class);
                 // 消除多斜杠，替换为单斜杠
                 String url = ("/" + baseUrl + "/" + methodRequestMapping.value().trim()).replaceAll("/+", "/");
-                handlerMapping.put(url, method);
+                Pattern pattern = Pattern.compile(url);
+//                handlerMapping.put(url, method);
+                handlerMapping.add(new Handler(entry.getValue(), method, pattern));
                 System.out.println("Mapped :" + url + "," + method);
 
             }
@@ -328,6 +328,36 @@ public class YysDispatcherServlet extends HttpServlet {
 
     }
 
+    /* 获取handler对象 */
+    private Handler getHandler(HttpServletRequest request) throws Exception {
+        if(handlerMapping.isEmpty()) return null;
+
+        String url = request.getRequestURI();
+        String contextPath = request.getContextPath();
+        url = url.replace(contextPath, "").replaceAll("/+", "/");
+
+        for (Handler handler : handlerMapping) {
+
+            Matcher matcher = handler.pattern.matcher(url);
+            if(!matcher.matches()) continue;
+
+            return handler;
+        }
+        return null;
+    }
+
+    // url传过来的参数都是String类型的，Http是基于字符串协议
+    // 只需要把String转换为任意类型就好
+    private Object convert(Class<?> paramType, String value) {
+        if(Integer.class == paramType) {
+            return Integer.valueOf(value);
+        }
+        // 如果还有double或者其他类型，继续加if
+        // 这时我们应该想到策略模式了
+        // 在这里暂时不实现..
+        return value;
+    }
+
     // 如果类名本身是小写字母，确实会出问题
     // 但是我要说明的是：这个方法是我自己用，private 的
     // 传值也是自己传，类也都遵循了驼峰命名法
@@ -342,5 +372,59 @@ public class YysDispatcherServlet extends HttpServlet {
         return String.valueOf(chars);
     }
 
+
+    /**
+     * 内部类
+     *      Handler 记录 Controller 中的 RequestMapping 和 Method 的对应关系
+     * @author yys
+     */
+    private class Handler {
+
+        // 保存方法对应的实例
+        protected Object controller;
+        // 保存映射的方法
+        protected Method method;
+        // 正则匹配url
+        protected Pattern pattern;
+        // 参数位置顺序
+        protected Map<String, Integer> paramIndexMapping;
+
+
+        public Handler(Object controller, Method method, Pattern pattern) {
+            this.controller = controller;
+            this.method = method;
+            this.pattern = pattern;
+
+            paramIndexMapping = new HashMap<String, Integer>();
+            putParamIndexMapping(method);
+        }
+
+
+        /* 记录方法中参数的位置 */
+        private void putParamIndexMapping(Method method) {
+
+            // 提取方法中加了注解的参数
+            Annotation[][] pa = method.getParameterAnnotations();
+            for(int i = 0; i < pa.length; i++) {
+                for (Annotation annotation : pa[i]) {
+                    if(annotation instanceof YysRequestParam) {
+                        String paramName = ((YysRequestParam) annotation).value().trim();
+                        if(!"".equals(paramName)) {
+                            paramIndexMapping.put(paramName, i);
+                        }
+                    }
+                }
+            }
+
+            // 提取方法中的request和response参数
+            Class<?>[] parameterTypes = method.getParameterTypes();
+            for(int i = 0; i < parameterTypes.length; i++) {
+                Class<?> parameterType = parameterTypes[i];
+                if(parameterType == HttpServletRequest.class || parameterType == HttpServletResponse.class) {
+                    paramIndexMapping.put(parameterType.getName(), i);
+                }
+            }
+        }
+    }
 
 }
